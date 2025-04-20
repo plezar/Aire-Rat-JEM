@@ -1,0 +1,31 @@
+gene	gene.corresp
+Epcam	NA
+Ptprc	NA
+Cd79a	B cells
+Ms4a1	B cells
+Cd3d	FOXP3 Treg
+Cd8a	CD8 T
+Cd4	NA
+Foxp3	NA
+Il2ra	NA
+Icos	NA
+Bcl6	NK
+Ccr6	GD T
+Spn	NA
+Cd80	FOXP3 Treg
+Il7r	NA
+Itgam	NA
+Itgae	NA
+Cd68	NA
+Cd28	FOXP3 Treg
+Cd69	NA
+S1pr1	NA
+Klrc1	NK
+Klrd1	NK
+Klrb1b	NK
+Nkg7	NK
+S100a8	Netrophils
+Stfa2	Netrophils
+Mmp8	Netrophils
+Pglyrp1	Netrophils
+Retnlg	Netrophils

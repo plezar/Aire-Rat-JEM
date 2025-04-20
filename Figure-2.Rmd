@@ -1,0 +1,294 @@
+---
+title: "JEM Figure 2"
+author: "Maksym Zarodniuk"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_document
+---
+
+```{r setup, warning=F, message=F}
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+library(cowplot)
+library(MetBrewer)
+library(patchwork)
+
+gntp_col <- met.brewer("Nizami", 2)[c(2, 1)]
+names(gntp_col) <- c("HE", "KO")
+```
+
+## 2A
+
+```{r}
+dfA <- read_csv("data/Figure_2/T-cell (flow) panel A.csv")
+dfA <- dfA %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Group", values_to = "Value") %>%
+  select(-tmp) %>%
+  mutate(Population = str_split(Group, " ", Inf, T)[,1],
+         Genotype = str_split(Group, " ", Inf, T)[,2],
+         Population = factor(Population, levels = c("CD4-CD8-", "CD4+CD8+", "CD4+", "CD8+")))
+
+stat.test <- dfA %>%
+  group_by(Population) %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+low_max <- 25
+high_min <- 70
+adjust <- high_min - low_max
+
+dfA <- dfA %>%
+  mutate(Value2 = as.numeric(Value),
+         Value2 = case_when(Value < low_max ~ Value2,
+                         Value > high_min ~ Value2 - adjust,
+                         TRUE ~ NA_real_))
+
+stat.test <- stat.test %>%
+  mutate(y.position = ifelse(y.position > high_min, y.position-adjust, y.position),
+         y.position = y.position - 5) 
+
+P_A <- ggplot(dfA, aes(Genotype, Value2, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  scale_y_continuous(breaks = seq(0, 100, 10), 
+                     limits = c(0, 90-adjust),
+                     label = function(x) {x + ifelse(x>=low_max, adjust, 0)}) +
+  facet_wrap(.~Population, nrow = 1) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  ylab("% of parent") +
+  xlab(NULL) +
+  theme(legend.position = "none", strip.background=element_rect(colour="black",
+                                    fill="white"), strip.text.x = element_text(face = "bold"))
+
+P_A
+```
+
+## 2B
+
+### Treg
+
+```{r}
+dfB <- read_csv("data/Figure_2/Treg (flow) panel B.csv") %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Group", values_to = "Value") %>%
+  select(-tmp) %>%
+  mutate(Population = str_split(Group, " ", Inf, T)[,1],
+         Genotype = str_split(Group, " ", Inf, T)[,2])
+
+stat.test <- dfB %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_B1 <- ggplot(dfB, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  ylab("% of parent") +
+  xlab(NULL) +
+  ylim(4, 11) +
+  theme(legend.position = "none") +
+  ggtitle("Treg")
+P_B1
+```
+
+### Foxp3
+
+```{r}
+dfB <- read_csv("data/Figure_2/Foxp3 (qPCR) HE vs KO panel B.csv") %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Genotype", values_to = "Value") %>%
+  select(-tmp) %>%
+  drop_na()
+
+stat.test <- dfB %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_B2 <- ggplot(dfB, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  ylab("Fold change") +
+  xlab(NULL) +
+  theme(legend.position = "none") +
+  ggtitle("Foxp3")
+
+P_B2
+```
+
+## 2C
+
+```{r}
+dfC <- read_csv("data/Figure_2/TECs in HE vs KO panel C.csv")
+
+dfC <- dfC %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Group", values_to = "Value") %>%
+  select(-tmp) %>%
+  mutate(Population = str_split(Group, " ", Inf, T)[,1],
+         Genotype = str_split(Group, " ", Inf, T)[,2])
+
+stat.test <- dfC %>%
+  group_by(Population) %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+dfC$Population <- factor(dfC$Population, levels = c("mTEChi", 'mTEClo', "cTEC")) 
+
+P_C <- ggplot(dfC, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  scale_y_continuous(limits = c(0, 90)) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=0.6) +
+  facet_grid(. ~ Population) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  ylab("% of parent") +
+  xlab(NULL) +
+  theme(legend.position = "none", strip.background=element_rect(colour="black",
+                                    fill="white"), strip.text.x = element_text(face = "bold"))
+
+P_C
+```
+
+## 2E
+
+### Hassal's body counts
+
+```{r}
+dfE1 <- read_csv("data/Figure_2/Hassal's body counts HE vs KO.csv")
+
+dfE1 <- dfE1 %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Genotype", values_to = "Value") %>%
+  select(-tmp) %>%
+  drop_na()
+
+dfE1$Genotype[dfE1$Genotype=="HET"] <- "HE"
+
+stat.test <- dfE1 %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_E <- ggplot(dfE1, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  ylab(bquote('Number of HCs/'*mm^2)) +
+  xlab(NULL) +
+  theme(legend.position = "none") +
+  ggtitle("")
+
+P_E
+```
+
+### Involucrin
+
+```{r}
+dfE2 <- read_csv("data/Figure_2/Inv HE vs KO panel E.csv")
+
+dfE2 <- dfE2 %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Group", values_to = "Value") %>%
+  select(-tmp) %>%
+  mutate(Population = str_split(Group, " ", Inf, T)[,1],
+         Genotype = str_split(Group, " ", Inf, T)[,2])
+
+stat.test <- dfE2 %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_E2 <- ggplot(dfE2, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  ylab("Fold change") +
+  xlab(NULL) +
+  theme(legend.position = "none") +
+  ggtitle("Involucrin")
+
+P_E2
+```
+
+### CK10
+
+```{r}
+dfE3 <- read_csv("data/Figure_2/CK10 He vs KO panel E.csv")
+dfE3 <- dfE3 %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Genotype", values_to = "Value") %>%
+  select(-tmp)
+
+stat.test <- dfE3 %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_E3 <- ggplot(dfE3, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.6) +
+  stat_pvalue_manual(stat.test, label = "p.adj", size=5) +
+  ylab("Fold change") +
+  xlab(NULL) +
+  theme_cowplot(20) +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  theme(legend.position = "none") +
+  ggtitle("CK10")
+
+P_E3
+```
+
+```{r}
+sessionInfo()
+```
+

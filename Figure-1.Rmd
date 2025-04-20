@@ -1,0 +1,319 @@
+---
+title: "JEM Figure 1"
+author: "Maksym Zarodniuk"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_document
+---
+
+```{r setup, warning=F, message=F}
+library(MetBrewer)
+library(patchwork)
+library(readxl)
+library(tidyverse)
+library(cowplot)
+library(rstatix)
+library(ggpubr)
+library(lemon)
+
+gntp_col <- met.brewer("Nizami", 2)[c(2, 1)]
+names(gntp_col) <- c("HE", "KO")
+```
+
+## 1A
+
+```{r, eval=F}
+dfA1 <- read_csv("data/Figure_1/IFNa2 KO vs HE panel Aa.csv") %>% mutate(IFN = "IFNa2")
+dfA2 <- read_csv("data/Figure_1/IFNa11 KO vs HE panel Ab.csv") %>% mutate(IFN = "IFNa11")
+
+dfA <- rbind(dfA1, dfA2) %>%
+  pivot_longer(!IFN, names_to = "Genotype", values_to = "Value")
+
+dfA$Genotype[dfA$Genotype=="HET"] <- "HE"
+
+stat.test <- dfA %>%
+  group_by(IFN) %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+p_A <- ggplot(dfA, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.7) +
+  facet_wrap(~ IFN) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  theme_cowplot() +
+  scale_colour_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  coord_capped_cart(left = "both", ylim = c(0, 180e3)) +
+  ylab("LIPS (LU)")
+
+p_A
+```
+
+## 1B
+
+```{r, eval=F}
+dfB <- read_csv("data/Figure_1/Neutralization KO vs HE panel B.csv")
+
+dfB <- dfB %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Genotype", values_to = "Value") %>%
+  select(-tmp)
+
+stat.test <- dfB %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+dfB$Genotype[dfB$Genotype=="HET"] <- "HE"
+
+p_B <- ggplot(dfB, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.7) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  theme_cowplot() +
+  scale_colour_manual(values = gntp_col) +
+  coord_capped_cart(left = "both", ylim = c(0, 120)) +
+  scale_fill_manual(values = gntp_col) +
+  ylab("Inhibition (%)")
+
+p_B
+```
+
+## 1C
+
+```{r, eval=F}
+dfC <- read_csv("data/Figure_1/IFN vs inhibition in KO only.csv")
+
+dfC <- dfC %>%
+  mutate(Group = ifelse(mIFNa11 < median(x$mIFNa11), "Low", "High"))
+dfC$Group <- factor(dfC$Group, levels = c("Low", "High"))
+
+stat.test <- dfC %>%
+  t_test(Inhibition ~ Group) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Group") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+p_C <- ggplot(dfC, aes(Group, Inhibition, color = Group)) +
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Group, color = Group), binaxis='y', stackdir='center', dotsize=.7) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  theme_cowplot() +
+  scale_colour_manual(values = met.brewer("Nizami", 2)[c(2, 1)]) +
+  coord_capped_cart(left = "both", ylim = c(0, 120)) +
+  scale_fill_manual(values = met.brewer("Nizami", 2)[c(2, 1)]) +
+  ylab("Inhibition (%)") +
+  xlab(NULL)
+
+p_C
+```
+
+## 1D
+
+```{r}
+dfD1 <- read_xlsx("data/Figure_1/Aire-LU-masterfile.xlsx", "IFNA11 KO LU")
+dfD2 <- read_xlsx("data/Figure_1/Aire-LU-masterfile.xlsx", "IFNA11 HE LU")
+
+col_names <- intersect(colnames(dfD1), colnames(dfD2))
+dfD <- rbind(
+  dfD1[,col_names],
+  dfD2[,col_names]
+)
+
+dfD$Groups <- factor(dfD$Groups, levels = c("1 – 2", "3 – 5", "6 – 8", "9 – 12", "13 – 19"))
+levels(dfD$Groups) <- c("[1 - 2]", "[3 - 5]", "[6 - 8]", "[9 - 12]", "[13 - 19]")
+n <- dfD %>% group_by(Groups, Genotype) %>% dplyr::summarise(n = n_distinct(`Rat_code`))
+
+stat.test <- dfD %>%
+  group_by(Groups) %>%
+  t_test(LU ~ Genotype) %>%
+  adjust_pvalue(method="fdr") %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Groups", fun = "mean_se")
+
+dfD_summarised <- dfD %>%
+  group_by(Groups, Genotype) %>%
+  left_join(n) %>%
+  summarise(Mean_LU = mean(LU),
+            SEM = sd(LU)/sqrt(n)) %>%
+  distinct()
+
+p_D <- ggplot(dfD_summarised, aes(x=Groups, y=Mean_LU, group=Genotype, color=Genotype)) + 
+  geom_line() +
+  geom_point()+
+  geom_errorbar(aes(ymin=Mean_LU-SEM, ymax=Mean_LU+SEM), width=.5,
+                 position=position_dodge(0.05)) +
+  geom_jitter(data = dfD, aes(x=Groups, y=LU, color=Genotype), 
+              width = 0.1, alpha = 0.3, size = 0.3) +
+  theme_cowplot(16) +
+  geom_text(data = stat.test %>% mutate(label = p.adj.signif, Genotype = "KO") %>% select(x, y = y.position, Groups, Genotype, label), 
+            aes(x = x, y = y, label = label), size = 5, color = "black") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  scale_color_manual(values = gntp_col) +
+  lemon::coord_capped_cart(left = "both") +
+  labs(y = "LIPS (LU)", x = "Age (months)")
+
+p_D
+```
+
+## 1E
+
+```{r}
+dfE <- read_tsv("data/Figure_1/LIPS in culture.txt")
+
+dfE <- dfE %>%
+  rownames_to_column("tmp") %>%
+  pivot_longer(!tmp, names_to = "Group", values_to = "Value") %>%
+  separate(Group, c("Group", "Time"), sep = "_") %>%
+  select(-tmp) %>%
+  drop_na()
+
+dfE$Group <- factor(dfE$Group, levels = c("thymus", "spleen", "BM", "LN"))
+dfE$Time <- factor(dfE$Time, levels = c("4", "5", "6-8"))
+levels(dfE$Time) <- c("4 months", "5 months", "6-8 months")
+
+p_E <- ggplot(dfE, aes(Group, Value, color = Group)) +
+  stat_summary(fun.y = mean, geom = "point") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_jitter(aes(x=Group, y=Value, color=Group), 
+              width = 0.1, alpha = 0.6, size = 1) +
+  theme_cowplot() +
+  facet_grid(. ~ Time) +
+  scale_y_log10() +
+  scale_colour_manual(values = met.brewer("Nizami", 4)) +
+  lemon::coord_capped_cart(left = "both") +
+  scale_fill_manual(values = met.brewer("Nizami", 4)) +
+  ylab("LIPS (LU)") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  xlab(NULL)
+
+p_E
+```
+
+## S1B
+
+
+```{r}
+abs_long <- readxl::read_xlsx("data/Figure_1/longitudinal data.xlsx", sheet="Longitudinal LU KO")
+he_long <- readxl::read_xlsx("data/Figure_1/longitudinal data.xlsx", sheet="Longitudinal LU HE for stat")
+
+abs_long <- abs_long %>%
+  pivot_longer(!Age, names_to = "Rat", values_to = "FC") %>%
+  drop_na()
+
+p_S1B <- ggplot(abs_long, aes(x=Age, y=FC)) + 
+  geom_line() +
+  geom_point()+
+  facet_wrap(~ Rat, nrow=3) +
+  theme_cowplot(16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), strip.background = element_blank(),
+  strip.text.x = element_blank()) +
+  scale_color_manual(values = gntp_col) +
+  geom_hline(yintercept = mean(he_long$HE)+2*sqrt(var(he_long$HE)), lty=2, col="grey") +
+  lemon::coord_capped_cart(left = "both", ylim = c(1e02, 1e06)) +
+  scale_x_continuous(breaks = seq(0, 20, by = 2), limits = c(0, 20)) +
+  labs(y = expression(paste("IFN", alpha, "11 (LU)")), x = "Age (months)") +
+  scale_y_log10()
+
+p_S1B
+```
+
+## S1A
+
+```{r}
+patient_abs <- readxl::read_xlsx("data/Figure_1/LIPS Humans and Rats_tidy.xlsx", sheet="Patients")
+rat_abs <- readxl::read_xlsx("data/Figure_1/LIPS Humans and Rats_tidy.xlsx", sheet="Rats")
+patient_abs$Group <- factor(patient_abs$Group, levels = c("C", "APECED"))
+```
+
+### Human
+
+```{r}
+gntp_col <- met.brewer("Nizami", 2)[c(2, 1)]
+names(gntp_col) <- c("C", "APECED")
+
+stat.test <- patient_abs %>%
+  group_by(Target) %>%
+  t_test(FC ~ Group) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Target") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+patient_abs_summarized <- patient_abs %>%
+  group_by(Target, Group) %>%
+  mutate(n = n()) %>%
+  summarise(Mean = mean(FC), SEM = sd(FC)/sqrt(n)) %>%
+  distinct()
+
+P_human <- ggplot(patient_abs_summarized, aes(Target, Mean, color = Group)) + 
+  geom_errorbar(aes(x=Target, ymin=Mean-SEM, ymax=Mean+SEM), width=0.4, position = position_dodge(.8)) +
+  geom_errorbar(aes(x=Target, ymin=Mean, ymax=Mean), width=0.6, position = position_dodge(.8)) +
+  geom_dotplot(data = patient_abs, aes(x=Target, y=FC, fill = Group), binaxis = "y", stackdir = "center", position = position_dodge(.8), dotsize = .5) +
+  stat_pvalue_manual(
+    stat.test,  label = "p.adj.signif", tip.length = 0, hide.ns = F
+  ) +
+  scale_color_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  theme_cowplot(16) +
+  lemon::coord_capped_cart(left = "both", ylim = c(-50, 900)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        plot.title = element_text(size=13), legend.position = "top") +
+  labs(x = NULL, y = "FC (LU)", color=NULL, fill=NULL) +
+  ggtitle("APECED patients")
+
+P_human
+```
+
+### Rat
+
+```{r}
+gntp_col <- met.brewer("Nizami", 2)[c(2, 1)]
+names(gntp_col) <- c("HE", "KO")
+
+stat.test <- rat_abs %>%
+  group_by(Target) %>%
+  t_test(FC ~ Group) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Target") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+rat_abs_summarized <- rat_abs %>%
+  group_by(Target, Group) %>%
+  mutate(n = n()) %>%
+  summarise(Mean = mean(FC), SEM = sd(FC)/sqrt(n)) %>%
+  distinct()
+
+P_rat <- ggplot(rat_abs_summarized, aes(Target, Mean, color = Group)) + 
+  geom_errorbar(aes(x=Target, ymin=Mean-SEM, ymax=Mean+SEM), width=0.4, position = position_dodge(.8)) +
+  geom_errorbar(aes(x=Target, ymin=Mean, ymax=Mean), width=0.6, position = position_dodge(.8)) +
+  geom_dotplot(data = rat_abs, aes(x=Target, y=FC, fill = Group), binaxis = "y", stackdir = "center", position = position_dodge(.8), dotsize = .5) +
+  stat_pvalue_manual(
+    stat.test,  label = "p.adj.signif", tip.length = 0, hide.ns = F
+  ) +
+  scale_color_manual(values = gntp_col) +
+  scale_fill_manual(values = gntp_col) +
+  theme_cowplot(16) +
+  lemon::coord_capped_cart(left = "both", ylim = c(-50, 700)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        plot.title = element_text(size=13), legend.position = "top") +
+  labs(x = NULL, y = NULL, fill=NULL, color = NULL) +
+  ggtitle("Aire KO rats")
+
+P_rat
+```
+
+```{r}
+sessionInfo()
+```
+

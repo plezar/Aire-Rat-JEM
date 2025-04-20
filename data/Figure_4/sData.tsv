@@ -1,0 +1,28 @@
+Name	Genotype	Dataset	Color
+GSM49731_KO_mTEChi	KO	Mouse B	#8cc8bc
+GSM49732_KO_mTEChi	KO	Mouse B	#8cc8bc
+GSM49735_WT_mTEChi	Ctrl	Mouse B	#8cc8bc
+GSM49736_WT_mTEChi	Ctrl	Mouse B	#8cc8bc
+GSM838272_WT	Ctrl	Mouse A	#7da7ea
+GSM838273_WT	Ctrl	Mouse A	#7da7ea
+GSM838274_WT	Ctrl	Mouse A	#7da7ea
+GSM838275_KO	KO	Mouse A	#7da7ea
+GSM838276_KO	KO	Mouse A	#7da7ea
+GSM838277_KO	KO	Mouse A	#7da7ea
+GSM2444_WT	Ctrl	Mouse D	#5773c0
+GSM2445_WT	Ctrl	Mouse D	#5773c0
+GSM2446_WT	Ctrl	Mouse D	#5773c0
+GSM2447_KO	KO	Mouse D	#5773c0
+GSM2448_KO	KO	Mouse D	#5773c0
+GSM2449_KO	KO	Mouse D	#5773c0
+KO1	KO	Mouse C	#1d4497
+WT1	Ctrl	Mouse C	#1d4497
+WT2	Ctrl	Mouse C	#1d4497
+KO2	KO	Mouse C	#1d4497
+WT3	Ctrl	Mouse C	#1d4497
+Het_P20-3_mTEChi	Ctrl	Rat	#dd7867
+Het_P21-8_mTEChi	Ctrl	Rat	#dd7867
+Het_P28-1_mTEChi	Ctrl	Rat	#dd7867
+KO_P20-4_mTEChi	KO	Rat	#dd7867
+KO_P21-10_mTEChi	KO	Rat	#dd7867
+KO_P28-3_mTEChi	KO	Rat	#dd7867

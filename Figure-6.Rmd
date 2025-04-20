@@ -1,0 +1,198 @@
+---
+title: "JEM Figure 6"
+author: "Maksym Zarodniuk"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_document
+---
+
+```{r setup, warning=F, message=F}
+library(Seurat)
+library(miloR)
+library(SingleCellExperiment)
+library(tidyverse)
+library(cowplot)
+library(scales)
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+library(rstatix)
+library(ggpubr)
+library(cowplot)
+library(MetBrewer)
+library(lemon)
+```
+
+```{r}
+remote_dir <- "/Volumes/TOSHIBA/molpat/APECED_rats/analysis/single_cell/sc_rat_spleen/data/"
+seurat_obj <- readRDS(paste0(remote_dir, "integrated_seurat_object.rds"))
+Idents(seurat_obj) <- "integrated_snn_res.0.8"
+seurat_obj_nk <- subset(x = seurat_obj, idents = c(9, 20))
+seurat_obj_nk <- RenameIdents(object = seurat_obj_nk, 
+                             "9" = "NK",
+                             "20" = "Activ. NK")
+```
+
+### 6A
+
+```{r}
+Idents(seurat_obj) <- "cell.type"
+seurat_sce <- as.SingleCellExperiment(seurat_obj)
+seurat_milo <- Milo(seurat_sce)
+reducedDim(seurat_milo, "UMAP") <- reducedDim(seurat_sce, "UMAP")
+
+set.seed(42)
+seurat_milo <- buildGraph(seurat_milo, k = 30, d = 30)
+seurat_milo <- makeNhoods(seurat_milo, prop = .05, k = 30, d=30, refined = TRUE)
+seurat_milo <- countCells(seurat_milo, meta.data = data.frame(colData(seurat_milo)), sample="sample")
+traj_design <- data.frame(colData(seurat_milo))[,c("sample", "genotype")]
+traj_design <- distinct(traj_design)
+rownames(traj_design) <- traj_design$sample
+seurat_milo <- calcNhoodDistance(seurat_milo, d=30)
+da_results <- testNhoods(seurat_milo, design = ~ genotype, design.df = traj_design)
+```
+
+```{r}
+da_results %>%
+  filter(FDR < 0.05) %>%
+  DT::datatable()
+```
+
+```{r}
+seurat_milo <- buildNhoodGraph(seurat_milo)
+col <- scale_fill_gradient2(low = muted("blue"),
+                            mid = "white",
+                            high = muted("red"),
+                            midpoint = 0)
+
+P_A1 <- plotNhoodGraphDA(seurat_milo, da_results, alpha=0.1, size_range = c(0.5, 10)) + col + labs(fill = "logFC")+ theme_cowplot() + xlab("UMAP_1") + ylab("UMAP_2") + xlim(11, 15) + ylim(-2.3, 1.1)
+
+P_A2 <- plotNhoodGraphDA(seurat_milo, da_results, alpha=0.1, size_range = c(0.5, 3)) + col + labs(fill = "logFC")+ theme_cowplot() + xlab("UMAP_1") + ylab("UMAP_2")
+
+P_A1 + P_A2
+```
+
+## 6B
+
+```{r}
+P_B <- DimPlot(seurat_obj_nk, cols = RColorBrewer::brewer.pal(6, "Set2"))
+
+P_B
+```
+
+## 6C
+
+```{r}
+DefaultAssay(seurat_obj_nk) <- "RNA"
+P_C <- DotPlot(seurat_obj_nk, c("Nkg7", "Gzmm", "Gzmk", "Xcl1", "Ctsw", "Prf1", "Cd27"),
+             scale = F) +
+  coord_flip() +
+  ylab(NULL) +
+  xlab(NULL) +
+  theme_cowplot(18) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +
+  viridis::scale_colour_viridis(option="magma") +
+  guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+
+P_C
+```
+
+## 6D
+
+```{r}
+DefaultAssay(seurat_obj_nk) <- "RNA"
+all_markers <- FindAllMarkers(seurat_obj_nk, only.pos = T, verbose = F)
+top_20 <- all_markers %>% group_by(cluster) %>% slice_min(p_val_adj, n=30)
+seurat_obj_nk <- ScaleData(seurat_obj_nk)
+
+P_D <- Heatmap(t(seurat_obj_nk@assays$RNA@scale.data[top_20$gene,]),
+        col = colorRamp2(seq(-1, 1, length.out=9), rev(brewer.pal(n=9, name="RdBu"))), 
+        name = "scaled_expr", 
+        row_split = seurat_obj_nk$genotype,
+        show_row_dend = F,
+        cluster_row_slices = TRUE,
+        #row_title_gp = gpar(fontsize = 11),
+        row_gap = unit(1, "mm"),
+        border = TRUE,
+        cluster_rows = TRUE,
+        show_column_dend = F,
+        column_names_gp = gpar(fontsize = 7),
+        left_annotation = rowAnnotation(`Cell type` = Idents(seurat_obj_nk),
+                                           col = list(`Cell type` = c("NK" = "#66C2A5", "Activ. NK" = "#FF7F00")), show_annotation_name = F, simple_anno_size = unit(.3, "cm")),
+        show_row_names = FALSE,
+        show_column_names = T,
+        column_names_rot = 75,
+        use_raster = TRUE,
+        raster_quality = 4,
+        #width = unit(8, "cm"),
+        heatmap_legend_param = list(title = "Scaled expr"))
+
+P_D
+```
+
+## 6E
+
+```{r}
+NK_FC_data <- read.csv("data/Figure_6/FC_NK_data.csv")
+NK_FC_data$Age_group <- factor(NK_FC_data$Age_group, levels = c("Young", "Old"))
+
+NK_FC_data_NK <- NK_FC_data[NK_FC_data$Population=="NK",]
+NK_FC_data_aNK <- NK_FC_data[NK_FC_data$Population=="Activ. NK",]
+
+HE_KO_col_mapping <- met.brewer("Nizami", 2)
+names(HE_KO_col_mapping) <- c("KO", "HE")
+
+## NK
+stat.test <- NK_FC_data_NK %>%
+  group_by(Age_group) %>%
+  t_test(Freq ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_E1 <- ggplot(NK_FC_data_NK, aes(Genotype, Freq, color = Genotype)) +
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.7) +
+  facet_grid(~Age_group) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  theme_cowplot() +
+  theme(legend.position = "none", strip.background=element_rect(colour="white",
+                                    fill="white"), strip.text.x = element_text(face = "bold")) +
+  scale_colour_manual(values = HE_KO_col_mapping) +
+  scale_fill_manual(values = HE_KO_col_mapping) +
+  coord_capped_cart(left = "both", ylim = c(0, 5)) +
+  ylab("%CD161+ of CD45+") +
+  xlab(NULL)
+
+## Activ. NK
+stat.test <- NK_FC_data_aNK %>%
+  group_by(Age_group) %>%
+  t_test(Freq ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_E2 <- ggplot(NK_FC_data_aNK, aes(Genotype, Freq, color = Genotype)) +
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=.7) +
+  facet_grid(~Age_group) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  theme_cowplot() +
+  theme(strip.background = element_blank(),
+  strip.text.x = element_blank(), legend.position = "none") +
+  scale_colour_manual(values = HE_KO_col_mapping) +
+  scale_fill_manual(values = HE_KO_col_mapping) +
+  coord_capped_cart(left = "both", ylim = c(0, 65)) +
+  ylab("%CD27+ of CD161+") +
+  xlab(NULL)
+
+P_E1 + P_E2
+```
+
+```{r}
+sessionInfo()
+```

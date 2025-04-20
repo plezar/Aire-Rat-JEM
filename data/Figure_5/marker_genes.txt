@@ -1,0 +1,47 @@
+gene	gene.corresp
+Itgam	NK cell
+Apoe	Macrophage
+Adgre1	Macrophage
+Csfr1	Macrophage
+Cd14	Macrophage (M1-like)
+Cd51	Macrophage (M2-like)
+Cd163	Macrophage (M2-like)
+Cd86	NA
+Itgax	cDC
+Clec9a	cDC
+Xcr1	cDC
+Siglech	pDC
+Cd4	NA
+S100a8	Neutrophil
+Sell	Neutrophil
+Bcl6	cDC
+Ptprc	NA
+Rgs13	T2 B cell
+Hmgb2	T2 B cell
+Gzmm	NK cell
+Ccl5	NK cell
+Nkg7	NK cell
+Gzmk	NK cell
+Cd8a	Naive CD8+ T cell
+Lat	NA
+Cd3d	NA
+Lck	NA
+Cxcr3	NA
+Icos	CD4+ Teff cell
+Foxp3	CD4+ Teff cell
+Il2ra	CD4+ Teff cell
+Lef1	Naive CD8+ T cell
+Cr2	MZ B cell
+Cd22	MZ B cell
+Fcer2	FO B cell
+Ms4a1	Memory B cell 1
+Cd79a	Memory B cell 1
+Cd19	MZ B cell
+Mx2	Memory B cell 2
+Mx1	Memory B cell 2
+Mzb1	Plasma cell
+Jchain	Plasma cell
+Tifa	Plasma cell
+Ctsw	Activated NK cell
+Ifitm1	Activated NK cell
+Xcl1	Activated NK cell

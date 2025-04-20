@@ -1,0 +1,344 @@
+---
+title: "TRG calling"
+author: "Maksym Zarodniuk"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_document
+---
+
+## Loading packages
+
+```{r setup, warning=F, message=F}
+library(limma)
+library(edgeR)
+library(ggtree)
+library(tidyverse)
+library(RColorBrewer)
+library(kneer)
+library(cowplot)
+library(clusterProfiler)
+library(biomaRt)
+library(ComplexHeatmap)
+```
+
+## Loading data
+
+```{r}
+mouseEnv <- new.env()
+ratEnv <- new.env()
+
+mouseEnv$counts <- read.table("data/misc/mouse_counts.txt", check.names = F)
+mouseEnv$rpkm <- read.table("data/misc/mouse_rpkm.txt", check.names = F)
+mouseEnv$tpm <- read.table("data/misc/mouse_tpm.txt", check.names = F)
+mouseEnv$pre.design <- read.table("data/misc/mouse_design.txt", check.names = F)
+
+ratEnv$counts <- read.table("data/misc/rat_counts.txt", check.names = F)
+ratEnv$rpkm <- read.table("data/misc/rat_rpkm.txt", check.names = F)
+ratEnv$tpm <- read.table("data/misc/rat_tpm.txt", check.names = F)
+ratEnv$pre.design <- read.table("data/misc/rat_design.txt", check.names = F)
+```
+
+## Normalization
+
+```{r}
+for (e in c(mouseEnv, ratEnv)) {
+  group <- factor(e$pre.design[,"group"])
+  design <- model.matrix(~0+group)
+  colnames(design) <- levels(group)
+  
+  ## put counts into DGE object and normalize
+  dge <- DGEList(counts=e$counts)
+  
+  ## ignore if not expressed in at least one sample
+  isexpr <- rowSums(cpm(dge)>1) >= 1   
+  dge <- dge[isexpr,keep.lib.sizes=FALSE]
+  dge <- calcNormFactors(dge)
+  
+  e$v <- voom(dge,design)
+}
+```
+
+## Filtering
+
+```{r}
+## in rat we have one sample annotated as "unknown" for which we have no information regarding tissue etc. 
+## => remove the sample
+ratEnv$counts <- ratEnv$counts[,which(!grepl("Unknown", colnames(ratEnv$counts)))]
+ratEnv$rpkm <- ratEnv$rpkm[,which(!grepl("Unknown", colnames(ratEnv$rpkm)))]
+ratEnv$tpm <- ratEnv$tpm[,which(!grepl("Unknown", colnames(ratEnv$tpm)))]
+ratEnv$v$E <-ratEnv$v$E[,which(!grepl("Unknown", colnames(ratEnv$v$E)))]
+ratEnv$pre.design <-ratEnv$pre.design[which(!ratEnv$pre.design$group=="Unknown"),]
+
+## rat: rename "Kindeys" to "Kidney"
+colnames(ratEnv$counts) <- gsub("Kidneys", "Kidney", colnames(ratEnv$counts))
+colnames(ratEnv$rpkm) <- gsub("Kidneys", "Kidney", colnames(ratEnv$rpkm))
+colnames(ratEnv$tpm) <- gsub("Kidneys", "Kidney", colnames(ratEnv$tpm))
+colnames(ratEnv$v$E) <- gsub("Kidneys", "Kidney", colnames(ratEnv$v$E))
+ratEnv$pre.design$group <- droplevels(factor(gsub("Kidneys", "Kidney", ratEnv$pre.design$group)))
+ratEnv$pre.design$sample <- droplevels(factor(gsub("Kidneys", "Kidney", ratEnv$pre.design$sample)))
+
+## in mouse we have one technical outlier
+## => remove the sample
+mouseEnv$counts <- mouseEnv$counts[,which(!grepl("199_11", colnames(mouseEnv$counts)))]
+mouseEnv$rpkm <- mouseEnv$rpkm[,which(!grepl("199_11", colnames(mouseEnv$rpkm)))]
+mouseEnv$tpm <- mouseEnv$tpm[,which(!grepl("199_11", colnames(mouseEnv$tpm)))]
+mouseEnv$v$E <- mouseEnv$v$E[,which(!grepl("199_11", colnames(mouseEnv$v$E)))]
+mouseEnv$pre.design <- mouseEnv$pre.design[which(!grepl("199_11", mouseEnv$pre.design$sample)),]
+
+for (e in c(ratEnv, mouseEnv)) {
+  ## Removing thymus
+  e$counts <- e$counts[,which(!grepl("Thymus", colnames(e$counts)))]
+  e$rpkm <- e$rpkm[,which(!grepl("Thymus", colnames(e$rpkm)))]
+  e$tpm <- e$tpm[,which(!grepl("Thymus", colnames(e$tpm)))]
+  e$v$E <-e$v$E[,which(!grepl("Thymus", colnames(e$v$E)))]
+  e$pre.design <-e$pre.design[which(!e$pre.design$group=="Thymus"),]
+  
+  ## removing genes that are not expressed
+  filt_passed <- names(which(apply(e$rpkm, 1, sum)!=0))
+  e$counts <- e$counts[rownames(e$counts) %in% filt_passed,]
+  e$rpkm <- e$rpkm[rownames(e$rpkm) %in% filt_passed,]
+  e$tpm <- e$tpm[rownames(e$tpm) %in% filt_passed,]
+  e$v$E <- e$v$E[rownames(e$v$E) %in% filt_passed,]
+}
+
+```
+
+## Grouping tissues
+
+```{r}
+for (e in c(ratEnv, mouseEnv)) {
+  e$rpkm_tissue_avg <- e$rpkm %>%
+    as.data.frame() %>%
+    rownames_to_column("gene") %>%
+    pivot_longer(!gene, names_to = "Sample", values_to = "Expression") %>%
+    left_join(
+      e$pre.design %>% dplyr::select(Tissue = group, Sample = sample),
+      by = "Sample"
+    ) %>%
+    group_by(gene, Tissue) %>%
+    summarise(Avg.Exp = mean(Expression)) %>%
+    pivot_wider(names_from = "Tissue", values_from = "Avg.Exp") %>%
+    column_to_rownames("gene")
+}
+```
+
+### Correlation matrix
+
+```{r}
+cor.Mm <- cor(t(scale(t(mouseEnv$rpkm_tissue_avg))))
+ht1 = Heatmap(cor.Mm, name = "Mouse")
+
+cor.Rn <- cor(t(scale(t(ratEnv$rpkm_tissue_avg))))
+ht2 = Heatmap(cor.Rn, name = "Rat")
+
+ht1 + ht2
+```
+
+### Hierarchical clustering
+
+```{r}
+dist_mat <- dist(scale(t(ratEnv$rpkm_tissue_avg)), method = 'manhattan')
+ratEnv$col_clust <- hclust(dist_mat)
+p1 <- ggtree(ratEnv$col_clust) + geom_tiplab(as_ylab=TRUE, color='firebrick') + ggtitle("Rat")
+
+dist_mat <- dist(scale(t(mouseEnv$rpkm_tissue_avg)), method = 'manhattan')
+mouseEnv$col_clust <- hclust(dist_mat)
+p2 <- ggtree(mouseEnv$col_clust) + geom_tiplab(as_ylab=TRUE, color='firebrick') + ggtitle("Mouse")
+
+p1 + p2
+```
+
+### PCA
+
+11 PCs explain ~99% of variance
+```{r}
+pca <- prcomp(scale((ratEnv$rpkm_tissue_avg)))
+summary(pca)
+```
+
+```{r}
+groups <- cutree(ratEnv$col_clust, k=11)
+ratEnv$pre.design <- ratEnv$pre.design %>%
+  left_join(
+    tibble(Tissue = names(groups), Group.no = groups),
+    by = c("group"="Tissue")
+  )
+```
+
+11 PCs explain ~99% of variance
+```{r}
+pca <- prcomp(scale((mouseEnv$rpkm_tissue_avg)))
+summary(pca)
+```
+
+```{r}
+groups <- cutree(mouseEnv$col_clust, k=11)
+mouseEnv$pre.design <- mouseEnv$pre.design %>%
+  left_join(
+    tibble(Tissue = names(groups), Group.no = groups),
+    by = c("group"="Tissue")
+  )
+```
+
+```{r}
+for (e in c(ratEnv, mouseEnv)) {
+  e$rpkm_grp_avg <- e$rpkm %>%
+    as.data.frame() %>%
+    rownames_to_column("gene") %>%
+    pivot_longer(!gene, names_to = "Sample", values_to = "Expression") %>%
+    left_join(
+      e$pre.design %>% dplyr::select(Group.no, Sample = sample),
+      by = "Sample"
+    ) %>%
+    drop_na() %>%
+    group_by(gene, Group.no) %>%
+    summarise(Avg.Exp = mean(Expression)) %>%
+    pivot_wider(names_from = "Group.no", values_from = "Avg.Exp") %>%
+    column_to_rownames("gene")
+}
+```
+
+## Defining TRGs
+
+```{r}
+thrsh_fun <- function(E) {
+  E^2/50 + E + 50
+}
+
+call_trg <- function(x) {
+  x <- sort(x)
+  for (i in 1:(length(x)-1)) {
+    cur_grp <- x[i]
+    nxt_grp <- x[i+1]
+    jump <- nxt_grp > thrsh_fun(cur_grp)
+    if ((i > (length(x)-3)) & jump & (nxt_grp > 50)) return(
+      paste(names(x)[(i+1):length(x)], collapse=",")
+    )
+  }
+  return(NULL)
+}
+
+for (e in c(ratEnv, mouseEnv)) {
+  trg_list <- apply(e$rpkm_grp_avg, 1, call_trg)
+  trg_list <- unlist(trg_list)
+  
+  e$TRG <- tibble(Gene = names(trg_list),
+         Groups = trg_list) %>%
+    mutate(Groups =  str_split(Groups, ",")) %>%
+    unnest(cols=c(Groups)) %>%
+    mutate(Groups =  as.numeric(Groups)) %>%
+    left_join(
+      e$pre.design %>% distinct(group, Group.no),
+      by = c("Groups"="Group.no")
+    ) %>%
+    group_by(Gene) %>% 
+    summarise(group = paste0(group, collapse = ",")) 
+}
+```
+
+```{r}
+plot_expression <- function(gene_name) {
+  data_to_plot <- ratEnv$rpkm_tissue_avg[gene_name,] %>%
+  rownames_to_column("ID") %>%
+  pivot_longer(!ID, names_to = "Tissue", values_to = "Expression")
+  
+  ggplot(data_to_plot, aes(x = reorder(Tissue, Expression), y = Expression)) +
+    geom_bar(stat="identity") +
+    coord_flip() +
+    theme_cowplot() +
+    labs(x = NULL, title = gene_name)
+}
+
+plot_expression(ratEnv$TRG[100,]$Gene)
+```
+
+### TRG distributions
+
+```{r}
+pdata1 <- mouseEnv$TRG %>%
+  mutate(group = str_split(group, ",")) %>%
+  unnest(cols=c(group)) %>%
+  group_by(group) %>%
+  summarise(Count = n())
+
+p1 <- ggplot(pdata1, aes(x=reorder(group, Count), y=Count)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  theme_cowplot() +
+  labs(x = NULL, title = "Mouse TRGs")
+
+pdata2 <- ratEnv$TRG %>%
+  mutate(group = str_split(group, ",")) %>%
+  unnest(cols=c(group)) %>%
+  group_by(group) %>%
+  summarise(Count = n())
+
+pdata2$group <- factor(pdata2$group, levels = pdata1 %>% arrange(Count) %>% pull(group))
+
+p2 <- ggplot(pdata2, aes(x=group, y=Count)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  theme_cowplot() +
+  labs(x = NULL, title = "Rat TRGs")
+
+p1 + p2
+```
+
+### Ortologs
+
+All rat genes need to be mapped to mouse genes for downstream analysis
+```{r}
+rat = useMart("ensembl", dataset = "rnorvegicus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+
+lds_result <- getLDS(attributes = c("ensembl_gene_id"),
+                       mart = rat,
+                       attributesL = c("ensembl_gene_id"), 
+                       martL = mouse)
+
+lds_result <- lds_result %>% rename(ID.Rn=Gene.stable.ID, ID.Mm = Gene.stable.ID.1)
+
+ratEnv$TRG <- ratEnv$TRG %>%
+  left_join(lds_result, by=c("Gene"="ID.Rn"))
+
+annotLookup <- getBM(
+  mart = mouse,
+  attributes=c("ensembl_gene_id", "external_gene_name"),
+  filter="ensembl_gene_id",
+  values = ratEnv$TRG$ID.Mm,
+  uniqueRows=TRUE)
+
+ratEnv$TRG <- ratEnv$TRG %>%
+  left_join(annotLookup, by=c("ID.Mm"="ensembl_gene_id")) %>%
+  rename(SYMBOL.Mm = external_gene_name)
+
+annotLookup <- getBM(
+  mart = rat,
+  attributes=c("ensembl_gene_id", "external_gene_name"),
+  filter="ensembl_gene_id",
+  values = ratEnv$TRG$Gene,
+  uniqueRows=TRUE)
+
+ratEnv$TRG <- ratEnv$TRG %>%
+  left_join(annotLookup, by=c("Gene"="ensembl_gene_id")) %>%
+  rename(SYMBOL.Rn = external_gene_name)
+
+annotLookup <- getBM(
+  mart = mouse,
+  attributes=c("ensembl_gene_id", "external_gene_name"),
+  filter="ensembl_gene_id",
+  values = mouseEnv$TRG$Gene,
+  uniqueRows=TRUE)
+
+mouseEnv$TRG <- mouseEnv$TRG %>%
+  left_join(annotLookup, by=c("Gene"="ensembl_gene_id")) %>%
+  rename(SYMBOL.Mm = external_gene_name)
+```
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+

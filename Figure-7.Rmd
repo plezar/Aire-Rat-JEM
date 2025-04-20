@@ -1,0 +1,497 @@
+---
+title: "JEM Figure 7"
+author: "Maksym Zarodniuk"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: html_document
+---
+
+```{r setup, warning=F, message=F}
+library(MetBrewer)
+library(readxl)
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+library(lemon)
+library(cowplot)
+library(coin)
+library(ggrepel)
+library(patchwork)
+library(ggdendro)
+library(ggtree)
+library(viridis)
+library(aplot)
+library(ggtext)
+library(Seurat)
+source("util.R")
+
+gntp_col <- met.brewer("Nizami", 2)[c(2, 1)]
+names(gntp_col) <- c("HE", "KO")
+```
+
+## 7A
+
+### Salivary gland
+
+```{r}
+pathology_data <- read_xlsx("data/Figure_7/Timecourse IF_tabel_vanus.xlsx", 'skoor+ifn')
+pathology_data$`Age_group` <- factor(pathology_data$`Age_group`, levels = c("[1 – 3)", "[3 – 6)", "[6 – 9)", "[9 – 13)", "[13 – 18]"))
+levels(pathology_data$`Age_group`) <- c("[1 – 2]", "[3 – 5]", "[6 – 8]", "[9 – 12]", "[13 – 18]")
+
+n <-  pathology_data %>% group_by(`Age_group`, Genotype) %>% dplyr::summarise(n = n_distinct(`Rat_code`))
+pathology_data_plot <- pathology_data %>%
+  group_by(Genotype, `Age_group`) %>%
+  left_join(n, by=c("Genotype", "Age_group")) %>%
+  dplyr::summarise(Mean_score = mean(`Inflammation_score_SG`),
+            SEM = sd(`Inflammation_score_SG`)/sqrt(n)) 
+```
+
+```{r}
+# wilcoxon test between [1 – 2] [3 – 5] [9 – 12] age groups within the KO group
+stat.KO <- pathology_data %>%
+  filter(Age_group %in% c("[1 – 2]", "[3 – 5]", "[9 – 12]")) %>%
+  filter(Genotype == "KO") %>%
+  mutate(Age_group = factor(Age_group)) %>%
+  rstatix::wilcox_test(Inflammation_score_SG ~ Age_group)
+
+DT::datatable(stat.KO)
+```
+
+```{r}
+# wilcoxon test between HE and KO groups for the [3 - 5] age group
+stat.35 <- pathology_data %>%
+  filter(Age_group == "[3 – 5]") %>%
+  rstatix::wilcox_test(Inflammation_score_SG ~ Genotype) %>%
+  mutate(p = round(p, 3))
+
+DT::datatable(stat.35)
+```
+
+```{r}
+P_A1 <- ggplot(pathology_data_plot, aes(x=`Age_group`, y=Mean_score, group=Genotype, color=Genotype)) + 
+  geom_line() +
+  geom_errorbar(aes(ymin=Mean_score-SEM, ymax=Mean_score+SEM), width=.2,
+                 position=position_dodge(0)) +
+  geom_point(data = pathology_data, aes(x=Age_group, y=Inflammation_score_SG, color=Genotype), 
+              width = 0.1, alpha = 0.6, size = 1, position=position_jitter(height=0, width=0.1)) +
+  theme_cowplot(16) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  #stat_pvalue_manual(stat.test, label = "p.adj") +
+  scale_color_manual(values = gntp_col) +
+  lemon::coord_capped_cart(left = "both", ylim = c(0, 5)) +
+  labs(y = "Pathology score", x = "Age (months)") +
+  annotate("segment", x = 1, xend = 1, y = 1.2, yend = 4.2) +
+  annotate("segment", x = 2-0.02, xend = 2-0.02, y = 3.8, yend = 4.2) +
+  annotate("segment", x = 1, xend = 2-0.02, y = 4.2, yend = 4.2) +
+  annotate("segment", x = 2+0.02, xend = 2+0.02, y = 3.8, yend = 4.2) +
+  annotate("segment", x = 2+0.02, xend = 4, y = 4.2, yend = 4.2) +
+  annotate("segment", x = 4, xend = 4, y = 4.2, yend = 1.5) +
+  annotate("segment", x = 2, xend = 2, y = 0.6, yend = 2.7) +
+  annotate("text", x = 1.5, y = 4.5, size=4, label = stat.KO[1,"p.adj",drop=T]) +
+  annotate("text", x = 3, y = 4.5, size=4, label = stat.KO[3,"p.adj",drop=T]) +
+  annotate("text", x = 2.5, y = 1.5, size=4, label = stat.35[1,"p",drop=T]) +
+  theme(legend.position = "none") +
+  ggtitle("Salivary gland")
+  
+P_A1
+```
+
+### Pancreas
+
+```{r}
+pathology_data_Panc <- pathology_data %>% drop_na(Inflammation_score_Panc)
+n <-  pathology_data_Panc %>% group_by(`Age_group`, Genotype) %>% dplyr::summarise(n = n_distinct(`Rat_code`))
+pathology_data_plot <- pathology_data_Panc %>%
+  group_by(Genotype, `Age_group`) %>%
+  left_join(n) %>%
+  dplyr::summarise(Mean_score = mean(`Inflammation_score_Panc`),
+            SEM = sd(`Inflammation_score_Panc`)/sqrt(n)) %>%
+  distinct()
+
+pathology_data_Panc.KO <- pathology_data_Panc %>% filter(Genotype == "KO")
+permutation_test_12 <- oneway_test(Inflammation_score_Panc ~ Age_group, 
+                                data = pathology_data_Panc.KO %>%
+                                  filter(Age_group %in% c("[1 – 2]", "[3 – 5]")) %>%
+                                  mutate(Age_group = factor(Age_group)))
+
+permutation_test_24 <- oneway_test(Inflammation_score_Panc ~ Age_group, 
+                                data = pathology_data_Panc.KO %>%
+                                  filter(Age_group %in% c("[3 – 5]", "[9 – 12]")) %>%
+                                  mutate(Age_group = factor(Age_group)))
+
+print(permutation_test_12)
+print(permutation_test_24)
+```
+
+```{r}
+pathology_data_Panc.35 <- pathology_data_Panc %>% filter(Age_group == "[3 – 5]")
+pathology_data_Panc.35$Genotype <- factor(pathology_data_Panc.35$Genotype)
+
+permutation_test_heko <- oneway_test(Inflammation_score_Panc ~ Genotype, 
+                                data = pathology_data_Panc.35)
+
+print(permutation_test_heko)
+```
+
+```{r}
+panc_stats <- data.frame(P.value = c(coin::pvalue(permutation_test_12), coin::pvalue(permutation_test_24), coin::pvalue(permutation_test_heko)), Comparison = c("([1 – 2], [3 – 5])", "([3 – 5], [9 – 12])", "(HE, KO)")) %>%
+  mutate(P.adjust = round(p.adjust(P.value), 3))
+
+panc_stats %>%
+  DT::datatable()
+```
+
+```{r}
+P_A2 <- ggplot(pathology_data_plot, aes(x=`Age_group`, y=Mean_score, group=Genotype, color=Genotype)) + 
+  geom_line() +
+  geom_errorbar(aes(ymin=Mean_score-SEM, ymax=Mean_score+SEM), width=.2,
+                 position=position_dodge(0)) +
+  geom_point(data = pathology_data, aes(x=Age_group, y=Inflammation_score_Panc, color=Genotype), 
+              width = 0.1, alpha = 0.6, size = 1, position=position_jitter(height=0, width=0.1)) +
+  theme_cowplot(16) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  #stat_pvalue_manual(stat.test, label = "p.adj") +
+  scale_color_manual(values = gntp_col) +
+  lemon::coord_capped_cart(left = "both") +
+  labs(y = NULL, x = "Age (months)") +
+  annotate("segment", x = 1, xend = 1, y = 0.3, yend = 2) +
+  annotate("segment", x = 2-0.02, xend = 2-0.02, y = 1.6, yend = 2) +
+  annotate("segment", x = 1, xend = 2-0.02, y = 2, yend = 2) +
+  annotate("segment", x = 2+0.02, xend = 2+0.02, y = 1.6, yend = 2) +
+  annotate("segment", x = 2+0.02, xend = 4, y = 2, yend = 2) +
+  annotate("segment", x = 4, xend = 4, y = 2, yend = 0.3) +
+  annotate("segment", x = 2, xend = 2, y = 0.2, yend = 0.8) +
+  annotate("text", x = 1.5, y = 2.3, size=4, label = panc_stats[1,"P.adjust",drop=T]) +
+  annotate("text", x = 3, y = 2.3, size=4, label = panc_stats[2,"P.adjust",drop=T]) +
+  annotate("text", x = 2.5, y = 0.5, size=4, label = panc_stats[3,"P.adjust",drop=T]) +
+  theme(legend.position = "none") +
+  ggtitle("Pancreas")
+  
+P_A2
+```
+
+## 7B
+
+```{r}
+path_score_data <- read.csv("data/Figure_7/path score vs IFN in Aire KO rats.csv")
+path_score_data <- path_score_data %>% drop_na(path_score)
+
+P_B1 <- ggscatter(path_score_data[path_score_data$Tissue=="Salivary",], x = "path_score", y = "fold.change",
+   add = "reg.line",
+   add.params = list(color = "#b83326", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE,
+   cor.coef = TRUE,
+   cor.coeff.args = list(method = "spearman", label.x = 2.5, label.y = 275, label.sep = "\n")
+   ) +
+  labs(x = "Pathology score", y = expression(paste("anti-IFN", alpha, "11 FC"))) +
+  theme_cowplot(16) +
+  lemon::coord_capped_cart(left = "both", ylim = c(0, 380))
+
+P_B2 <- ggscatter(path_score_data[path_score_data$Tissue=="Pancreas",], x = "path_score", y = "fold.change",
+   add = "reg.line",
+   add.params = list(color = "#b83326", fill = "lightgray"), # Customize reg. line
+   conf.int = TRUE,
+   cor.coef = TRUE,
+   cor.coeff.args = list(method = "spearman", label.x = 1,  label.y = 275, label.sep = "\n")
+   ) +
+  labs(x = "Pathology score", y = NULL) +
+  theme_cowplot(16) +
+  lemon::coord_capped_cart(left = "both", ylim = c(0, 380))
+
+P_B1 + P_B2
+```
+
+## 7C
+
+```{r}
+dfC <- readxl::read_xlsx("data/Figure_7/PCR serum on PolyIC splenocytes HevsKO.xlsx")
+dfC <- dfC %>%
+  pivot_longer(!Gene, names_to = "Genotype", values_to = "Value")
+
+stat.test <- dfC %>%
+  group_by(Gene) %>%
+  t_test(Value ~ Genotype) %>%
+  adjust_pvalue() %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Genotype") %>%
+  mutate(p.adj = signif(p.adj, 2))
+
+P_C <-ggplot(dfC, aes(Genotype, Value, color = Genotype)) + 
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..)) + 
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=0.5) +
+  geom_dotplot(aes(fill = Genotype, color = Genotype), binaxis='y', stackdir='center', dotsize=1) +
+  stat_pvalue_manual(stat.test, label = "p.adj") +
+  facet_wrap(. ~ Gene) +
+  theme_cowplot(16) +
+  scale_colour_manual(values = gntp_col) +
+  coord_capped_cart(left = "both", ylim = c(0, 1.7)) +
+  scale_fill_manual(values = gntp_col) +
+  theme(strip.background=element_rect(colour="white",
+                                    fill="white"), legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        strip.text.x = element_text(face = "bold.italic")) +
+  ylab("Relative expression") +
+  xlab(NULL)
+
+P_C
+```
+
+## 7D
+
+```{r}
+imi_dta <- read.csv("data/Figure_7/Imiquimod_treatment_KOWT.csv")
+imi_dta <- imi_dta %>%
+  pivot_longer(!c(Rat_ID, Genotype, Treatment), names_to = "Day", values_to = "Percent change") %>%
+  mutate(Day = as.factor(as.numeric(gsub("X", "", Day)))) %>%
+  unite("Group", c(Genotype, Treatment), sep=" + ", remove = F)
+
+imi_dta_plot <- imi_dta %>%
+  group_by(Group, Genotype, Treatment, Day) %>%
+  mutate(n = n_distinct(Rat_ID)) %>%
+  summarise(Mean = mean(`Percent change`),
+            SEM = sd(`Percent change`)/sqrt(n)) %>%
+  distinct()
+
+ko_imiq_vs_vas <- imi_dta  %>%
+  filter(Genotype == "KO", Day ==4) %>%
+  rstatix::pairwise_wilcox_test(`Percent change` ~ Treatment)
+
+wt_imiq_vs_vas <- imi_dta  %>%
+  filter(Genotype == "WT", Day ==4) %>%
+  rstatix::pairwise_wilcox_test(`Percent change` ~ Treatment)
+
+imiq_ko_vs_wt <- imi_dta  %>%
+  filter(Treatment == "Imiquimod", Day ==4) %>%
+  rstatix::wilcox_test(`Percent change` ~ Genotype)
+
+imi_dta %>%
+  filter(Day == 4) %>%
+  anova_test(`Percent change` ~ Genotype * Treatment)
+
+stat.test <- bind_rows(ko_imiq_vs_vas, wt_imiq_vs_vas, imiq_ko_vs_wt)
+stat.test$p.adj <- p.adjust(stat.test$p)
+
+group_col <- met.brewer("Nizami", 2)[c(2, 1)]
+group_col <- rep(group_col, 2)
+names(group_col) <- c("WT + Vaseline", "KO + Vaseline", "WT + Imiquimod", "KO + Imiquimod")
+
+P_D <- ggplot(imi_dta_plot, aes(x=Day, y=Mean, group=Group, color=Group)) + 
+  geom_line() +
+  geom_point(aes(shape = Treatment), size=3)+
+  geom_point(data = imi_dta, aes(x=Day, y=`Percent change`, color=Group), 
+              width = 0.1, alpha = 0.6, size = 1, position=position_jitter(height=0, width=0.1)) +
+  geom_errorbar(aes(ymin=Mean-SEM, ymax=Mean+SEM), width=.2,
+                 position=position_dodge(0)) +
+  theme_cowplot(16) +
+  scale_shape_manual(values=c(16, 1)) +
+  scale_color_manual(values = group_col) +
+  lemon::coord_capped_cart(left = "both", ylim = c(0, 220)) +
+  labs(x = "Day", y = "% Ear Thickening") +
+  theme(legend.position = "none")
+
+P_D
+```
+
+## 7E
+
+```{r}
+remote_dir <- "/Volumes/TOSHIBA/molpat/APECED_rats/analysis/single_cell/sc_rat_salivary/data/"
+seurat_obj <- readRDS(paste0(remote_dir, "integrated_annotated.rds"))
+```
+
+```{r}
+Idents(seurat_obj) <- "cell.type.idx"
+color_mapping <- tibble(
+  Cell.type = levels(seurat_obj$cell.type),
+  Color = c("#fe9b00", "#633372", "#e6a2a6", "#de597c", "#2b9b81", "#d8443c", "#aa7aa1", "#fbe183", "#1f6e9c", "#9b3441", "#92c051", "#9f5691", "#e87b89")
+)
+
+umap_plot <- DimPlot(seurat_obj,
+        label = TRUE,
+        label.size = 5,
+        cols = color_mapping$Color) +
+  theme(legend.position = "none") +
+  labs(subtitle = NULL)
+
+legend <- DimPlot(seurat_obj,
+                group.by = "legend",
+                cols = color_mapping$Color,
+                label = TRUE)
+
+legend <- plot_grid(get_legend(legend))
+
+umap_plot + legend
+```
+
+## 7F
+
+```{r}
+isg_data <- read_tsv("data/Figure_7/CTS_ISGs_processed.tsv")
+de.results <- read_tsv("data/Figure_7/DE_results.tsv")
+
+de.results <- de.results %>%
+  left_join(
+    data.frame(Cell.type = levels(seurat_obj$cell.type), Cell.type.lvl1 = c("T4",  "T4", "T8", "GD", "NKT", "NK", "B", "B", "GN", "MF", "NK", "T8", NA))
+  ) %>%
+  left_join(
+    isg_data %>% select(Cell.type, ortholog_name, Group),
+    by = c("Gene.name" = "ortholog_name", "Cell.type.lvl1" = "Cell.type")
+  ) %>%
+  mutate(ISG = ifelse(Group=="induced", 1, 0)) %>%
+  replace_na(list(ISG = 0))
+
+p1 <- plot_volcano_color_ISG("CD8+ T cell")
+p2 <- plot_volcano_color_ISG("Macrophage") + ylab(NULL)
+p3 <- plot_volcano_color_ISG("NK cell") + ylab(NULL)
+p4 <- plot_volcano_color_ISG("Treg") + ylab(NULL)
+
+P_F <- p1 + p2 + p3 + p4 + plot_layout(ncol = 4, widths = c(1.1, 1, 1, 1))
+
+P_F
+```
+
+### ORA
+
+```{r}
+# Preselecting cell types
+selected_cell_types <- de.results %>% filter(FDR < 0.05) %>% group_by(Cell.type) %>% summarise(Count = n()) %>% pull(Cell.type)
+
+enrichment_df = data.frame()
+for (Cell_type in selected_cell_types) {
+  de.results_sub <- de.results %>%
+    dplyr::filter(Cell.type == Cell_type) %>%
+    select(Gene.name, DE, ISG) %>%
+    replace_na(list(ISG = 0))
+  
+  contingency.table <- table(de.results_sub$ISG, de.results_sub$DE)
+
+  if (nrow(contingency.table) < 2) { #?
+    enrichment_df <- rbind(
+      enrichment_df,
+      data.frame(Cell.type = Cell_type,
+                 pval = NA,
+                 OR = NA,
+                 CI.low = NA,
+                 CI.hi = NA))
+    next
+  }
+  test <- fisher.test(contingency.table)
+  enrichment_df <- rbind(
+    enrichment_df,
+    data.frame(Cell.type = Cell_type,
+               pval = test$p.value,
+               OR = test$estimate,
+               CI.low = test$conf.int[1],
+               CI.hi = test$conf.int[2])
+  )
+}
+enrichment_df$p.adj <- p.adjust(enrichment_df$pval, "fdr")
+enrichment_df <- enrichment_df %>%
+  mutate(Col = if_else(p.adj < .05, "p<0.05", "p>0.05")) %>%
+  drop_na()
+
+enrichment_df$Cell.type <- factor(enrichment_df$Cell.type, levels=enrichment_df$Cell.type[order(enrichment_df$OR)])
+col_vec <- c(as.vector(met.brewer("Nizami", 5)[2]), "grey")
+
+enrichment_df <- enrichment_df %>%
+  mutate(hjust = ifelse(CI.hi==Inf, 1.5, -.2),
+         hjust = ifelse(is.na(CI.hi), NA, hjust))
+
+rownames(enrichment_df) <- enrichment_df$Cell.type
+
+# Function to map p-values to significance indicators
+map_p_value <- function(p_value) {
+  if_else(p_value <= 0.0001, "****",  # Added condition for p-value <= 0.0001
+          if_else(p_value < 0.001, "***", 
+                  if_else(p_value < 0.01, "**", 
+                          if_else(p_value < 0.05, "*", ""))))
+}
+
+enrichment_df$p.adj.signif <- map_p_value(enrichment_df$p.adj)
+enrichment_df[c("CD8+ T cell", "Macrophage", "NK cell", "Treg"),] %>% DT::datatable()
+```
+
+## S3D
+
+```{r, fig.height=15, fig.width=7}
+color_mapping <- c("#fe9b00", "#633372", "#e6a2a6", "#de597c", "#2b9b81", "#d8443c", "#aa7aa1", "#fbe183", "#1f6e9c", "#9b3441", "#92c051", "#9f5691", "#e87b89")
+names(color_mapping) <- levels(seurat_obj$cell.type)
+
+markers_df <- read_tsv("data/Figure_7/marker_genes.txt")
+markers_df$Color <- color_mapping[match(markers_df$gene.corresp, names(color_mapping))]
+markers_df <- markers_df %>%
+  replace_na(list(Color = "#b1b1b1")) %>%
+  mutate(y.label = paste("<span style = 'color:",
+                         Color,
+                         ";'>",
+                         gene,
+                         "</span>", sep = ""))
+
+data.to.plot <- dot_plot(object = seurat_obj[,seurat_obj$genotype=="HE"],
+        assay = "RNA",
+        features = markers_df$gene,
+        cluster.idents = TRUE,
+        group.by = "cell.type") %>%
+  dplyr::rename(`% Expressing` = pct.exp, `Cell type` = id) %>%
+  left_join(markers_df, by = c("features.plot" = "gene"))
+
+data.to.plot$features.plot <- factor(data.to.plot$features.plot, levels = unique(markers_df$gene))
+
+data.to.plot <- data.to.plot %>%
+  filter(`% Expressing` > 1)
+  
+data.to.plot$y.label <- factor(data.to.plot$y.label, levels = markers_df$y.label)
+data.to.plot$`Cell type` <- factor(data.to.plot$`Cell type`, levels = (levels(seurat_obj$cell.type)))
+
+dotplot <- data.to.plot %>%
+  ggplot(aes(y=features.plot, x = `Cell type`, color = avg.exp.scaled, size = `% Expressing`)) + 
+  geom_point() +
+  geom_point(aes(size=`% Expressing`), shape = 21, colour="black", stroke=0.5) +
+  theme_cowplot(13) +
+  scale_radius(limits = c(0, 100)) +
+  #scale_size(range = c(0, 3.2)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.text.y = element_markdown(),
+        axis.line = element_blank()) +
+  ylab(NULL) +
+  xlab(NULL) +
+  theme(axis.ticks = element_blank()) +
+  scale_x_discrete(position = "top") +
+  viridis::scale_colour_viridis(option="magma") +
+  guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+
+
+labels <- ggplot(data.to.plot %>%
+                   distinct(`Cell type`),
+                 aes(y = factor(1), x = `Cell type`, fill = `Cell type`)) + 
+  geom_tile() +
+  scale_fill_manual(values = color_mapping) + 
+  theme_nothing() +
+  xlim2(dotplot) +
+  xlab(NULL)
+
+P <- labels +
+  dotplot + 
+  plot_layout(nrow = 2, heights = c(.2, 9))
+
+P
+```
+
+## S3E
+
+```{r}
+P_S3E <- seurat_obj@meta.data %>%
+  group_by(genotype, orig.ident, cell.type) %>%
+  summarise(Count = n()) %>%
+  mutate(Freq = Count/sum(Count)) %>%
+  ggplot(aes(cell.type, Freq, fill = genotype)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  stat_summary(geom = "errorbar", fun.data = mean_se, position = "dodge") +
+  geom_point(position = position_dodge(0.8), alpha=0.3, size = 0.5) +
+  scale_fill_manual(values = gntp_col) +
+  theme_cowplot() +
+  theme(axis.text.x = element_text(angle = 90,  vjust = 0.5, hjust=1)) +
+  labs(x = NULL, y = "Frequency")
+
+P_S3E
+```
+

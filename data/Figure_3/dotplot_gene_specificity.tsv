@@ -1,0 +1,47 @@
+gene	gene.corresp
+Epcam	Epithelial
+Krt8	Epithelial
+S100a8	Pdpn- mTECP
+Defa5	Pdpn- mTECP
+Np4	Pdpn- mTECP
+Mki67	Pdpn+ mTECP
+Lgals1	Pdpn+ mTECP
+Pdpn	Pdpn+ mTECP
+Top2a	Pdpn+ mTECP
+Cenpf	Pdpn+ mTECP
+Prss16	cTEC hi
+Ctsl	cTEC hi
+Ly75	cTEC hi
+Dll4	cTEC hi
+Ccl25	cTEC hi
+Cxcl12	cTEC hi
+Lck	cTEC nurse
+Cd3d	cTEC nurse
+Ccl21	mTEC I
+Ccl19	mTEC I
+Ascl1	mTEC I
+Aire	mTEC II.2
+Tnfrsf11a	mTEC II.2
+Fezf2	mTEC II.2
+Cd86	mTEC II.2
+Cxcl9	mTEC II.2
+Myog	mTEC II.2
+Ivl	mTEC III
+Krt80	mTEC III
+Spt1	mTEC III
+Sbsn	mTEC III
+Cnfn	mTEC III
+Ccl22	mTEC II.3
+Clu	mTEC II.3
+Ccl20	mTEC II.3
+Ccl6	mTEC II.3
+Ins2	mTEC II.3
+Dmkn	mTEC II.3
+Gip	mTEC II.3
+Nts	mTEC II.3
+Pou2f3	mTEC IV
+Dclk1	mTEC IV
+Hepacam2	Ionocyte-like TEC
+Avil	Ionocyte-like TEC
+Foxi1	Ionocyte-like TEC
+Cftr	Ionocyte-like TEC
